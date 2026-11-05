@@ -58,21 +58,31 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Servidor Academia Vivace activo' });
 });
 
-// Registro de orden / taquilla
+// Registro de orden / taquilla con mejor control de errores en consola
 app.post('/api/orders', async (req, res) => {
   const { user_name, user_phone, discipline, ticket_type, cashea_level, payment_ref } = req.body;
+
+  console.log("Recibiendo datos de orden:", req.body); // Esto saldrá en los logs de Render
 
   try {
     const result = await db.execute({
       sql: `INSERT INTO orders (user_name, user_phone, discipline, ticket_type, cashea_level, payment_ref, status)
             VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      args: [user_name, user_phone, discipline, ticket_type, cashea_level || 1, payment_ref]
+      args: [
+        user_name || 'Sin nombre', 
+        user_phone || 'Sin teléfono', 
+        discipline || 'General', 
+        ticket_type || 'General', 
+        cashea_level || 1, 
+        payment_ref || 'N/A'
+      ]
     });
 
+    console.log("Orden guardada con ID:", Number(result.lastInsertRowid));
     res.status(201).json({ success: true, orderId: Number(result.lastInsertRowid) });
   } catch (error) {
-    console.error('Error al guardar la orden:', error);
-    res.status(500).json({ success: false, error: 'Error al procesar la orden' });
+    console.error('❌ Error crítico al insertar en Turso:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

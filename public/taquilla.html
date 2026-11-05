@@ -847,71 +847,81 @@
             }
         }
 
-        // VERIFICACIÓN DE ACCESO EN PUERTA POR ESCANEO QR
-        function verificarOrdenPorQr(orderId) {
-            document.getElementById('auth-section').classList.add('d-none');
-            document.getElementById('booking-section').classList.add('d-none');
-            document.getElementById('validator-view').classList.remove('d-none');
+// VERIFICACIÓN DE ACCESO EN PUERTA POR ESCANEO QR (Conectado a Turso)
+async function verificarOrdenPorQr(orderId) {
+    document.getElementById('auth-section').classList.add('d-none');
+    document.getElementById('booking-section').classList.add('d-none');
+    document.getElementById('validator-view').classList.remove('d-none');
 
-            let db = getDB();
-            const orden = db.orders.find(o => o.id == orderId);
-            const iconHeader = document.getElementById('val-icon-header');
-            const actionArea = document.getElementById('val-action-area');
+    const iconHeader = document.getElementById('val-icon-header');
+    const actionArea = document.getElementById('val-action-area');
 
-            if (!orden) {
-                iconHeader.style.background = "#dc3545";
-                iconHeader.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
-                document.getElementById('val-nombre').textContent = "TICKET NO ENCONTRADO";
-                document.getElementById('val-cedula').textContent = "--";
-                document.getElementById('val-asientos').textContent = "--";
-                document.getElementById('val-contador-asistencia').textContent = "0 / 0";
-                document.getElementById('val-estado-texto').textContent = "Código QR inválido o inexistente.";
-                actionArea.innerHTML = `<div class="alert alert-danger fw-bold">Este código QR no corresponde a ninguna reserva registrada.</div>`;
-                return;
-            }
+    try {
+        // Consultamos al servidor backend que trae los datos de Turso
+        const response = await fetch('/api/orders');
+        const orders = await response.json();
+        
+        // Buscamos la orden que coincida con el ID del QR
+        const orden = orders.find(o => String(o.id) === String(orderId));
 
-            ordenEnVerificacion = orden;
-            document.getElementById('val-nombre').textContent = orden.nombre;
-            document.getElementById('val-cedula').textContent = orden.cedula;
-            document.getElementById('val-asientos').textContent = orden.asientos.join(', ');
-
-            if (orden.status !== 'PAGADO') {
-                iconHeader.style.background = "#ffc107";
-                iconHeader.innerHTML = '<i class="fa-solid fa-lock"></i>';
-                document.getElementById('val-contador-asistencia').textContent = "Bloqueado";
-                document.getElementById('val-estado-texto').textContent = "El pago de esta orden aún está en revisión.";
-                actionArea.innerHTML = `<div class="alert alert-warning fw-bold text-dark">Este ticket no está activo porque el pago se encuentra pendiente de aprobación.</div>`;
-                return;
-            }
-
-            let totalComprados = orden.asientos.length;
-            let totalIngresados = orden.ingresados || 0;
-            let pendientes = totalComprados - totalIngresados;
-
-            document.getElementById('val-contador-asistencia').textContent = `${totalIngresados} / ${totalComprados}`;
-
-            if (pendientes <= 0) {
-                iconHeader.style.background = "#6c757d";
-                iconHeader.innerHTML = '<i class="fa-solid fa-ban"></i>';
-                document.getElementById('val-estado-texto').textContent = "¡Todos los puestos de este ticket ya ingresaron al evento!";
-                actionArea.innerHTML = `<div class="alert alert-secondary fw-bold">Cupo completo. Ya ingresaron las ${totalComprados} personas asignadas a este boleto.</div>`;
-            } else {
-                iconHeader.style.background = "#10b981";
-                iconHeader.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
-                document.getElementById('val-estado-texto').textContent = `Quedan ${pendientes} personas por ingresar de este grupo.`;
-                actionArea.innerHTML = `
-                    <div class="mb-3">
-                        <label class="form-label text-warning fw-bold">¿Cuántas personas van a pasar en este momento? (Máx. ${pendientes})</label>
-                        <div class="col-md-6 mx-auto mb-3">
-                            <input type="number" id="input-cantidad-ingresan" class="form-control text-center fs-4" value="1" min="1" max="${pendientes}">
-                        </div>
-                        <button onclick="registrarIngresoConClave()" class="btn btn-success btn-lg w-100 py-3 rounded-pill fw-bold shadow">
-                            <i class="fa-solid fa-user-check me-2"></i> Registrar Ingreso (Pide Clave Admin)
-                        </button>
-                    </div>
-                `;
-            }
+        if (!orden) {
+            iconHeader.style.background = "#dc3545";
+            iconHeader.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+            document.getElementById('val-nombre').textContent = "TICKET NO ENCONTRADO";
+            document.getElementById('val-cedula').textContent = "--";
+            document.getElementById('val-asientos').textContent = "--";
+            document.getElementById('val-contador-asistencia').textContent = "0 / 1";
+            document.getElementById('val-estado-texto').textContent = "Código QR inválido o inexistente.";
+            actionArea.innerHTML = `<div class="alert alert-danger fw-bold">Este código QR no corresponde a ninguna reserva registrada.</div>`;
+            return;
         }
+
+        ordenEnVerificacion = orden;
+        // Mapeo directo con los campos devueltos por tu servidor en Turso
+        document.getElementById('val-nombre').textContent = orden.user_name || "Sin nombre";
+        document.getElementById('val-cedula').textContent = orden.user_phone || "Sin teléfono";
+        document.getElementById('val-asientos').textContent = `${orden.discipline || 'General'} (${orden.ticket_type || 'General'})`;
+
+        // Verificamos estado de pago de forma segura
+        const estadoPago = orden.status ? orden.status.toUpperCase() : 'PENDING';
+        if (estadoPago !== 'PAGADO' && estadoPago !== 'PENDING') {
+            iconHeader.style.background = "#ffc107";
+            iconHeader.innerHTML = '<i class="fa-solid fa-lock"></i>';
+            document.getElementById('val-contador-asistencia').textContent = "Bloqueado";
+            document.getElementById('val-estado-texto').textContent = "El pago de esta orden está retenido o rechazado.";
+            actionArea.innerHTML = `<div class="alert alert-warning fw-bold text-dark">Este ticket no está activo porque el pago no ha sido aprobado.</div>`;
+            return;
+        }
+
+        let totalComprados = 1; 
+        let totalIngresados = orden.ingresados || 0;
+        let pendientes = totalComprados - totalIngresados;
+
+        document.getElementById('val-contador-asistencia').textContent = `${totalIngresados} / ${totalComprados}`;
+
+        if (pendientes <= 0) {
+            iconHeader.style.background = "#6c757d";
+            iconHeader.innerHTML = '<i class="fa-solid fa-ban"></i>';
+            document.getElementById('val-estado-texto').textContent = "¡Este ticket ya ingresó al evento!";
+            actionArea.innerHTML = `<div class="alert alert-secondary fw-bold">Cupo completo. Ya se validó este boleto.</div>`;
+        } else {
+            iconHeader.style.background = "#10b981";
+            iconHeader.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
+            document.getElementById('val-estado-texto').textContent = `Ticket válido listo para ingresar. Ref: ${orden.payment_ref || 'N/A'}`;
+            actionArea.innerHTML = `
+                <div class="mb-3">
+                    <button onclick="registrarIngreso(${orden.id})" class="btn btn-success btn-lg w-100 py-3 rounded-pill fw-bold shadow">
+                        <i class="fa-solid fa-user-check me-2"></i> Registrar Ingreso en Puerta
+                    </button>
+                </div>
+            `;
+        }
+
+    } catch (error) {
+        console.error("Error al conectar con la base de datos:", error);
+        actionArea.innerHTML = `<div class="alert alert-danger fw-bold">Error de conexión al verificar el ticket.</div>`;
+    }
+}
 
         function registrarIngresoConClave() {
             const cantidadAProcesar = parseInt(document.getElementById('input-cantidad-ingresan').value);
